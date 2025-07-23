@@ -9,7 +9,7 @@
  * behaves as expected under various conditions.
  */
 
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers"; // Added 'time' import
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Signature } from "ethers";
@@ -188,7 +188,8 @@ describe("zTICS Contract Tests", function () {
     it("Should allow setting allowance via EIP-2612 permit", async function () {
       const spenderAddress = anotherAccount.address;
       const permitAmount = ethers.parseEther("500");
-      const deadline = Math.floor(Date.now() / 1000) + 3600;
+      // Use Hardhat's time.latest() to get the current block timestamp and add 3600 seconds (1 hour)
+      const deadline = (await time.latest()) + 3600;
       // Get the current nonce for the signing account.
       const nonce = await zTICS.nonces(otherAccount.address);
       const chainId = (await ethers.provider.getNetwork()).chainId;

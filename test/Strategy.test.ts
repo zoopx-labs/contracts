@@ -1,8 +1,12 @@
-/*
- * INSTRUCTIONS:
- * 1. Create a new file in your `test/` directory named `Strategy.test.ts`.
- * 2. Paste all the code below into this new file.
- * 3. Run the tests from your terminal using the command: `npx hardhat test`
+/**
+ * @file Test suite for the Strategy.sol contract.
+ * @author ZoopX Labs
+ * @date 2025-07-18
+ *
+ * @description This file contains a comprehensive set of tests for the Strategy contract,
+ * which is the dispatcher & validator whitelisting hub for the ZoopX Protocol.
+ * These tests are structured using Hardhat and Ethers.js to ensure the contract
+ * behaves as expected under all conditions.
  */
 
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";

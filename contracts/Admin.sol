@@ -26,6 +26,7 @@ contract Admin is AccessControl, Pausable {
         keccak256("VALIDATOR_MANAGER_ROLE");
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER_ROLE");
     bytes32 public constant AMM_MANAGER_ROLE = keccak256("AMM_MANAGER_ROLE");
+    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
     // --- State Variables ---
     address public strategyContract;
@@ -42,6 +43,7 @@ contract Admin is AccessControl, Pausable {
     bool public isStakingPaused;
     bool public isBridgePaused;
     bool public isAmmPaused;
+    bool public isInstantWithdrawPaused;
 
     // --- Constants ---
     uint256 public constant MAX_BRIDGE_FEE_BPS = 25; // Max fee is 0.25%
@@ -62,6 +64,7 @@ contract Admin is AccessControl, Pausable {
     event StakingPaused(bool isPaused);
     event BridgePaused(bool isPaused);
     event AmmPaused(bool isPaused);
+    event InstantWithdrawPaused(bool isPaused);
     event AmmParametersUpdated(
         address oldFactory,
         address oldRouter,
@@ -124,6 +127,19 @@ contract Admin is AccessControl, Pausable {
         require(isAmmPaused != _paused, "Admin: Already in that state");
         isAmmPaused = _paused;
         emit AmmPaused(_paused);
+    }
+
+    function setInstantWithdrawPaused(
+        bool _paused
+    ) external onlyRole(PAUSER_ROLE) {
+        require(
+            isInstantWithdrawPaused != _paused,
+            "Admin: Already in that state"
+        );
+
+        isInstantWithdrawPaused = _paused;
+
+        emit InstantWithdrawPaused(_paused);
     }
 
     // --- Strategy Management Functions ---
