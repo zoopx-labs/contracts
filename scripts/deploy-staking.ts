@@ -14,6 +14,7 @@ import { ethers, network } from "hardhat";
 import {
   Admin,
   ZTICS,
+  Strategy,
   UnbondingManager,
   BoostVault,
   TICS_Staking_Vault,
@@ -71,6 +72,13 @@ async function main() {
   const zTICSAddress = await zTICS.getAddress();
   console.log(`zTICS contract deployed to: ${zTICSAddress}`);
 
+  // Deploy Strategy Contract
+  const StrategyFactory = await ethers.getContractFactory("Strategy");
+  const strategy = (await StrategyFactory.deploy(adminAddress)) as Strategy;
+  await strategy.waitForDeployment();
+  const strategyAddress = await strategy.getAddress();
+  console.log(`Strategy contract deployed to: ${strategyAddress}`);
+
   // Deploy UnbondingManager (temporary owner is deployer)
   const UnbondingManagerFactory = await ethers.getContractFactory(
     "UnbondingManager"
@@ -117,6 +125,10 @@ async function main() {
   await zTICS.connect(deployer).transferOwnership(ticsVaultAddress);
   console.log(`zTICS ownership transferred to Staking Vault.`);
 
+  // Link the Strategy contract to the vault
+  await ticsVault.connect(adminAccount).setStrategy(strategyAddress);
+  console.log(`Strategy contract linked to Staking Vault.`);
+
   // Set the vault address in UnbondingManager, then transfer ownership
   await unbondingManager.connect(deployer).setStakingVault(ticsVaultAddress);
   await unbondingManager.connect(deployer).transferOwnership(ticsVaultAddress);
@@ -140,6 +152,7 @@ async function main() {
   console.log("ZoopX Staking Protocol Addresses:");
   console.log(`- Admin: ${adminAddress}`);
   console.log(`- zTICS: ${zTICSAddress}`);
+  console.log(`- Strategy: ${strategyAddress}`);
   console.log(`- TICS_Staking_Vault: ${ticsVaultAddress}`);
   console.log(`- UnbondingManager: ${unbondingManagerAddress}`);
   console.log(`- BoostVault: ${boostVaultAddress}`);

@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol"; // Import Strings for toString()
 
 /**
  * @title ZoopX Unbonding Manager
@@ -36,6 +37,9 @@ contract UnbondingManager is ERC721Enumerable, Ownable {
     uint256 public constant UNBONDING_PERIOD = 14 days; // Constant for the unbonding period
     uint256 public constant MAX_VESTING_START_DATE_EXTENSION = 365 days; // 1 year (approx. 365 days)
 
+    // NEW: State variable to store the base URI for NFT metadata
+    string private _baseTokenURI;
+
     // --- Events ---
     event UnbondingPositionCreated(
         address indexed user,
@@ -51,6 +55,7 @@ contract UnbondingManager is ERC721Enumerable, Ownable {
     );
     event OrphanedNFTBurned(uint256 indexed tokenId, address indexed owner);
     event StakingVaultSet(address indexed vaultAddress); // NEW EVENT
+    event BaseURISet(string newBaseURI); // NEW EVENT for setting base URI
 
     // Custom Errors
     error NFTDoesNotExist();
@@ -76,6 +81,8 @@ contract UnbondingManager is ERC721Enumerable, Ownable {
         // FIX: The stakingVault address is no longer set in the constructor.
         rewardsUnlockTimestamp = _rewardsUnlockTimestamp;
         _nextTokenId = 0; // Initialize token ID counter
+        // _baseTokenURI can be initialized here or left empty to be set by admin later
+        // _baseTokenURI = "https://your-dynamic-metadata-api.com/metadata/"; // Example: uncomment and set a default
     }
 
     /**
@@ -90,6 +97,36 @@ contract UnbondingManager is ERC721Enumerable, Ownable {
         stakingVault = _vaultAddress;
         emit StakingVaultSet(_vaultAddress);
     }
+
+    /**
+     * @notice Sets the base URI for all NFT token IDs.
+     * @dev Can only be called by the contract owner (the Admin.sol contract or the TICS_Staking_Vault).
+     * This URI will be prepended to the token ID to form the full tokenURI.
+     * Example: "https://your-dynamic-metadata-api.com/metadata/"
+     * @param baseURI_ The base URL for the NFT metadata API.
+     */
+    function setBaseURI(string memory baseURI_) public onlyOwner {
+        _baseTokenURI = baseURI_;
+        emit BaseURISet(baseURI_);
+    }
+
+    /**
+     * @notice Returns the base URI for all token IDs.
+     * @dev This is an internal helper function for tokenURI.
+     * Overrides the default _baseURI from ERC721.
+     */
+    function _baseURI() internal view override returns (string memory) {
+        return _baseTokenURI;
+    }
+
+    // The tokenURI function is automatically implemented by ERC721Enumerable
+    // by combining _baseURI() and Strings.toString(tokenId).
+    // No explicit override is needed here unless you want custom logic beyond the default.
+    // Example of what it does internally (conceptual):
+    // function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    //     _requireOwned(tokenId);
+    //     return string(abi.encodePacked(_baseURI(), Strings.toString(tokenId)));
+    // }
 
     function createUnbondingPosition(
         address _user,

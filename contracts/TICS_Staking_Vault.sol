@@ -27,6 +27,10 @@ interface IZTICS is IERC20 {
     function decimals() external view returns (uint8);
 }
 
+interface IStrategy {
+    function isValidator(address validator) external view returns (bool);
+}
+
 interface IUnbondingManager {
     struct UnbondingPosition {
         address user;
@@ -130,6 +134,7 @@ contract TICS_Staking_Vault is ReentrancyGuard {
     IZTICS public immutable zTICSContract;
     IUnbondingManager public immutable unbondingManager;
     IBoostVault public immutable boostVault;
+    IStrategy public strategyContract;
 
     uint256 public totalStakedTICS;
     uint256 public pendingDelegationTICS;
@@ -190,6 +195,7 @@ contract TICS_Staking_Vault is ReentrancyGuard {
     event RewardsNormalizationDateSet(uint256 newDate);
     event RewardsCompounded(uint256 rewardsAmount, uint256 feesCollected);
     event RewardSnapshotTaken(uint256 exchangeRate, uint256 timestamp);
+    event StrategyContractUpdated(address indexed newStrategy);
 
     constructor(
         address _adminAddress,
@@ -207,6 +213,23 @@ contract TICS_Staking_Vault is ReentrancyGuard {
         lastDelegationTimestamp = 0;
 
         MAX_CONFIG_DATE = block.timestamp + 181 days;
+    }
+
+    // --- Setter Function for Strategy Contract ---
+    function setStrategy(address _strategyAddress) external {
+        require(
+            adminContract.hasRole(
+                adminContract.DEFAULT_ADMIN_ROLE(),
+                msg.sender
+            ),
+            "Admin only"
+        );
+        require(
+            _strategyAddress != address(0),
+            "Strategy address cannot be zero"
+        );
+        strategyContract = IStrategy(_strategyAddress);
+        emit StrategyContractUpdated(_strategyAddress);
     }
 
     // --- Snapshot Function ---
@@ -255,99 +278,77 @@ contract TICS_Staking_Vault is ReentrancyGuard {
         (uint256 stakedBoostZtics, ) = boostVault.getUserStakeInfo(msg.sender);
         require(stakedBoostZtics == 0, "Vault: Unstake from Boost Vault first");
 
-        uint256 currentTicsValue = getTicsByZTics(_zTicsAmount); // Current TICS value of zTICS being burned
-        // Removed the restrictive liquidity check here to allow withdrawal into the queue
-        // require(
-        //     currentTicsValue <= (pendingDelegationTICS + totalStakedTICS),
-        //     "Vault: Insufficient liquid or actively staked TICS for withdrawal"
-        // );
+        uint256 currentTicsValue = getTicsByZTics(_zTicsAmount);
 
-        uint256 principalForNFT; // Principal portion for the Unbonding NFT
-        uint256 rewardsForNFT; // Rewards portion for the Unbonding NFT
+        uint256 principalForNFT;
+        uint256 rewardsForNFT;
         uint256 vestingStartDate;
         bool rewardVestingDateFinalized;
 
         if (snapshotTimestamp == 0) {
-            // Before snapshot, rewards are simply the current gain.
-            // If currentTicsValue is less than _zTicsAmount, no rewards, principalForNFT absorbs the loss.
             if (currentTicsValue > _zTicsAmount) {
                 rewardsForNFT = currentTicsValue - _zTicsAmount;
-                principalForNFT = _zTicsAmount; // Original principal
+                principalForNFT = _zTicsAmount;
             } else {
                 rewardsForNFT = 0;
-                principalForNFT = currentTicsValue; // Principal reduced due to loss
+                principalForNFT = currentTicsValue;
             }
             vestingStartDate = (block.timestamp < rewardsUnlockTimestamp)
                 ? rewardsUnlockTimestamp
                 : block.timestamp;
             rewardVestingDateFinalized = false;
         } else {
-            // After snapshot, split gain into vested rewards and principal portion.
             uint256 ticsValueAtSnapshot = (_zTicsAmount *
                 snapshotExchangeRate) / PRECISION;
 
-            // Vested rewards are gains up to the snapshot.
             uint256 vestedRewardsFromSnapshot = 0;
             if (ticsValueAtSnapshot > _zTicsAmount) {
                 vestedRewardsFromSnapshot = ticsValueAtSnapshot - _zTicsAmount;
             }
 
-            // rewardsForNFT is capped by vestedRewardsFromSnapshot.
             rewardsForNFT = vestedRewardsFromSnapshot;
-
-            // principalForNFT is the current total value minus the rewards that are vested.
-            // This means any post-snapshot gains/losses are absorbed by the principal portion of the NFT.
             principalForNFT = currentTicsValue - rewardsForNFT;
-
             vestingStartDate = snapshotTimestamp;
             rewardVestingDateFinalized = true;
         }
 
-        // Deduct only the principalForNFT portion from pendingDelegationTICS or totalStakedTICS.
-        // This ensures that the immediate liquid/staked pool is only reduced by the principal portion
-        // of the withdrawal. The rewards portion is a claim against the overall vault yield.
         if (principalForNFT <= pendingDelegationTICS) {
             pendingDelegationTICS -= principalForNFT;
         } else {
             uint256 remainingPrincipalToDeduct = principalForNFT -
                 pendingDelegationTICS;
             pendingDelegationTICS = 0;
-            // Ensure totalStakedTICS does not underflow by capping deduction at its current value
             totalStakedTICS -= Math.min(
                 totalStakedTICS,
                 remainingPrincipalToDeduct
             );
         }
 
-        // The amount to deduct from totalPrincipal should be the original principal equivalent
-        // of the zTICS burned, adjusted for any overall protocol loss.
-        // If currentTicsValue is less than _zTicsAmount, it means the protocol is underwater,
-        // so the principal leaving is effectively currentTicsValue. Otherwise, it's the original _zTicsAmount.
         uint256 principalToDeductFromTotalPrincipal = Math.min(
             _zTicsAmount,
             currentTicsValue
         );
         totalPrincipal -= principalToDeductFromTotalPrincipal;
 
-        pendingUnbondingTICS += principalForNFT; // Use principalForNFT for unbonding
+        pendingUnbondingTICS += principalForNFT;
 
         zTICSContract.burn(msg.sender, _zTicsAmount);
 
         tokenId = unbondingManager.createUnbondingPosition(
             msg.sender,
-            principalForNFT, // Use the calculated principal for NFT
-            rewardsForNFT, // Use the calculated rewards for NFT
+            principalForNFT,
+            rewardsForNFT,
             vestingStartDate,
             rewardVestingDateFinalized
         );
 
         emit WithdrawalRequested(
             msg.sender,
-            currentTicsValue, // Emitting currentTicsValue (total value of withdrawal)
+            currentTicsValue,
             _zTicsAmount,
             tokenId,
-            principalForNFT, // Emitting principal portion for NFT
-            rewardsForNFT // Emitting rewards portion for NFT
+            principalForNFT,
+            rewardsForNFT
         );
     }
 
@@ -374,7 +375,7 @@ contract TICS_Staking_Vault is ReentrancyGuard {
             "Vault: Slippage check failed, received too few TICS"
         );
         pendingDelegationTICS -= ticsToReceive;
-        totalPrincipal -= ticsToReceive; // This deduction is fine for instant withdraw as it is a full withdrawal
+        totalPrincipal -= ticsToReceive;
         zTICSContract.burn(msg.sender, _zTicsAmount);
         payable(adminContract.treasuryAddress()).transfer(fee);
         payable(msg.sender).transfer(amountToUser);
@@ -462,10 +463,6 @@ contract TICS_Staking_Vault is ReentrancyGuard {
 
     // --- View Functions ---
 
-    /**
-     * @notice Returns the total value of all TICS managed by the protocol (TVL).
-     * This includes actively staked, pending delegation, pending unbonding, and unclaimed rewards.
-     */
     function getVaultTVL() public view returns (uint256) {
         return
             totalStakedTICS +
@@ -474,10 +471,6 @@ contract TICS_Staking_Vault is ReentrancyGuard {
             unclaimedLockedRewards;
     }
 
-    /**
-     * @notice Returns the value of TICS actively backing the current zTICS supply.
-     * This is used to calculate the zTICS exchange rate and excludes TICS in the unbonding phase.
-     */
     function getTotalActiveTICS() public view returns (uint256) {
         return totalStakedTICS + pendingDelegationTICS + unclaimedLockedRewards;
     }
@@ -487,16 +480,14 @@ contract TICS_Staking_Vault is ReentrancyGuard {
     ) public view returns (uint256) {
         uint256 totalSupply = zTICSContract.totalSupply();
         if (totalSupply == 0) return _zTicsAmount;
-        // Use getTotalActiveTICS for the conversion calculation
         return Math.mulDiv(_zTicsAmount, getTotalActiveTICS(), totalSupply);
     }
 
     function getZTicsByTics(uint256 _ticsAmount) public view returns (uint256) {
         uint256 totalSupply = zTICSContract.totalSupply();
         if (totalSupply == 0) return _ticsAmount;
-        // Use getTotalActiveTICS for the conversion calculation
         uint256 activeTICS = getTotalActiveTICS();
-        if (activeTICS == 0) return _ticsAmount; // Prevent division by zero if pool is empty
+        if (activeTICS == 0) return _ticsAmount;
         return Math.mulDiv(_ticsAmount, totalSupply, activeTICS);
     }
 

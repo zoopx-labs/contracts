@@ -44,7 +44,7 @@ const config: HardhatUserConfig = {
         network: "qubeticsTestnet",
         chainId: 9029,
         urls: {
-          apiURL: "https://testnet.qubetics.work/api", // URL for the block explorer's API
+          apiURL: "https://rpc-testnet.qubetics.work/", // URL for the block explorer's API
           browserURL: "https://testnet.qubetics.work", // URL of the block explorer
         },
       },
