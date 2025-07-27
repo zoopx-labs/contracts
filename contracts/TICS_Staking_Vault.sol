@@ -461,6 +461,11 @@ contract TICS_Staking_Vault is ReentrancyGuard {
     }
 
     // --- View Functions ---
+
+    /**
+     * @notice Returns the total value of all TICS managed by the protocol (TVL).
+     * This includes actively staked, pending delegation, pending unbonding, and unclaimed rewards.
+     */
     function getVaultTVL() public view returns (uint256) {
         return
             totalStakedTICS +
@@ -469,20 +474,30 @@ contract TICS_Staking_Vault is ReentrancyGuard {
             unclaimedLockedRewards;
     }
 
+    /**
+     * @notice Returns the value of TICS actively backing the current zTICS supply.
+     * This is used to calculate the zTICS exchange rate and excludes TICS in the unbonding phase.
+     */
+    function getTotalActiveTICS() public view returns (uint256) {
+        return totalStakedTICS + pendingDelegationTICS + unclaimedLockedRewards;
+    }
+
     function getTicsByZTics(
         uint256 _zTicsAmount
     ) public view returns (uint256) {
         uint256 totalSupply = zTICSContract.totalSupply();
         if (totalSupply == 0) return _zTicsAmount;
-        return Math.mulDiv(_zTicsAmount, getVaultTVL(), totalSupply);
+        // Use getTotalActiveTICS for the conversion calculation
+        return Math.mulDiv(_zTicsAmount, getTotalActiveTICS(), totalSupply);
     }
 
     function getZTicsByTics(uint256 _ticsAmount) public view returns (uint256) {
         uint256 totalSupply = zTICSContract.totalSupply();
         if (totalSupply == 0) return _ticsAmount;
-        uint256 tvl = getVaultTVL();
-        if (tvl == 0) return _ticsAmount;
-        return Math.mulDiv(_ticsAmount, totalSupply, tvl);
+        // Use getTotalActiveTICS for the conversion calculation
+        uint256 activeTICS = getTotalActiveTICS();
+        if (activeTICS == 0) return _ticsAmount; // Prevent division by zero if pool is empty
+        return Math.mulDiv(_ticsAmount, totalSupply, activeTICS);
     }
 
     function pendingPoints(address _user) public view returns (uint256) {
